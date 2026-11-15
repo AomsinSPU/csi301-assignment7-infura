@@ -35,8 +35,8 @@
 
       <section class="connection-settings" aria-label="ตั้งค่า Infura">
         <div class="section-heading"><h2>เชื่อมต่อบัญชีของคุณ</h2><span class="step-label">01 / CONNECT</span></div>
-        <label for="connection-credentials">ข้อมูลเชื่อมต่อ Infura</label>
-        <textarea id="connection-credentials" rows="3" autocomplete="off" spellcheck="false" placeholder="บรรทัดที่ 1: Infura API Key หรือ Sepolia HTTPS URL&#10;บรรทัดที่ 2: Private Key"></textarea>
+        <label for="connection-credentials">Infura API Key หรือ Sepolia HTTPS URL</label>
+        <input id="connection-credentials" type="password" autocomplete="off" spellcheck="false" placeholder="API Key หรือ https://sepolia.infura.io/v3/API_KEY">
 
       </section>
 
@@ -48,7 +48,7 @@
         <div class="wallet-actions">
           <button id="disconnect-wallet" class="button button-outline" type="button" disabled>ตัดการเชื่อมต่อ</button>
           <button id="switch-network" class="button button-outline" type="button" hidden>เปลี่ยนเป็น Sepolia</button>
-          <button id="connect-wallet" class="button button-primary" type="button">เชื่อมต่อ Infura <span aria-hidden="true">↗</span></button>
+          <button id="connect-wallet" class="button button-primary" type="button">เชื่อมต่อ MetaMask <span aria-hidden="true">↗</span></button>
         </div>
       </section>
 
@@ -74,7 +74,7 @@
             <div class="amount-field"><input id="withdraw-amount" name="withdraw-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-describedby="amount-help" disabled><span>ETH</span></div>
             <button id="withdraw-button" class="button button-outline button-full" type="submit" disabled>ถอนเงิน <span aria-hidden="true">↑</span></button>
           </form>
-          <p id="amount-help" class="field-help">ระบุจำนวน ETH มากกว่า 0 · ยืนยันบนหน้าเว็บ · ลงนามด้วยบัญชีที่ตั้งค่าในเครื่อง</p>
+          <p id="amount-help" class="field-help">ระบุจำนวน ETH มากกว่า 0 · ยืนยันบนหน้าเว็บ · ยืนยันธุรกรรมใน MetaMask</p>
         </section>
       </div>
 

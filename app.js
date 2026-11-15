@@ -27,6 +27,10 @@ let revision = 0;
 let busy = false;
 let wrongNetwork = false;
 let web3 = null;
+let walletProvider = null;
+let announcedMetaMask = null;
+window.addEventListener("eip6963:announceProvider", event => { if (event.detail?.info?.rdns === "io.metamask") announcedMetaMask = event.detail.provider; });
+window.dispatchEvent(new Event("eip6963:requestProvider"));
 const CONTRACT_ADDRESS = "0x7AE51eb74CC9E7DcB20A0c5F0E878fE7f0B11340";
 const ABI = [
  { type: "function", name: "deposit", inputs: [], outputs: [], stateMutability: "payable" },
@@ -47,7 +51,7 @@ function setStatus(message, tone = "info") {
 function updateControls() {
   const unavailable = busy || !contract;
   ui.connect.disabled = busy || Boolean(contract);
-  ui.connect.textContent = account ? "เชื่อมต่อแล้ว" : "เชื่อมต่อ Infura ↗";
+  ui.connect.textContent = account ? "เชื่อมต่อแล้ว" : "เชื่อมต่อ MetaMask ↗";
   ui.switchNetwork.hidden = !wrongNetwork;
   ui.switchNetwork.disabled = busy;
   ui.refresh.disabled = unavailable;
@@ -62,9 +66,11 @@ function updateControls() {
 
 function clearSession() {
   revision += 1;
-  web3?.eth.accounts.wallet.clear();
+  walletProvider?.removeListener?.("accountsChanged", handleWalletChange);
+  walletProvider?.removeListener?.("chainChanged", handleWalletChange);
+  walletProvider?.removeListener?.("disconnect", handleWalletChange);
+  walletProvider = null;
   web3 = null;
-  credentialsInput.value = "";
   account = null;
   contract = null;
   wrongNetwork = false;
@@ -81,6 +87,8 @@ function describeError(error) {
   const code = error.code ?? error.info?.error?.code;
   if (code === "INSUFFICIENT_FUNDS") return "Sepolia ETH ในกระเป๋าไม่พอสำหรับจำนวนเงินและค่าธรรมเนียม";
   if (code === "CALL_EXCEPTION") return "Contract ปฏิเสธรายการ กรุณาตรวจจำนวนเงิน ยอดเงินฝาก และ Contract Address";
+  if (error.code === 4001 || error.code === "ACTION_REJECTED") return "คุณยกเลิกคำขอใน MetaMask";
+  if (error instanceof Error && !error.code) return error.message;
   return "ดำเนินการไม่สำเร็จ ตรวจยอด Sepolia ETH และสถานะบน Etherscan ก่อนทำรายการซ้ำ";
 }
 
@@ -108,39 +116,48 @@ async function refreshBalance() {
   ui.balanceDetail.textContent = `${balance.toString()} wei · ยอดเงินฝากของบัญชีนี้`;
 }
 
+function handleWalletChange() {
+  clearSession();
+  setStatus("บัญชีหรือเครือข่ายเปลี่ยน กรุณาเชื่อมต่อ MetaMask อีกครั้ง", "info");
+}
+
 async function synchronizeWallet() {
-  const entries = credentialsInput.value.trim().split(/\s+/);
-  if (entries.length !== 2) throw new Error("ใส่ Infura API Key หรือ URL ในบรรทัดแรก และ Private Key ในบรรทัดที่สอง");
-  const infuraValue = entries[0];
+  const infuraValue = credentialsInput.value.trim();
   const INFURA_URL = /^[a-zA-Z0-9_-]+$/.test(infuraValue)
-    ? `https://sepolia.infura.io/v3/${infuraValue}`
-    : infuraValue;
-  let PRIVATE_KEY = entries[1];
-  credentialsInput.value = "";
+    ? `https://sepolia.infura.io/v3/${infuraValue}` : infuraValue;
+  if (!/^https:\/\/sepolia\.infura\.io\/v3\/[a-zA-Z0-9_-]+$/.test(INFURA_URL)) throw new Error("กรอก Infura API Key หรือ Sepolia HTTPS URL ให้ถูกต้อง");
   clearSession();
   try {
-    if (!/^https:\/\/sepolia\.infura\.io\/v3\/[a-zA-Z0-9_-]+$/.test(INFURA_URL)) throw new Error("ใช้ Infura HTTPS URL ของ Sepolia เท่านั้น");
+    const injected = window.ethereum;
+    walletProvider = announcedMetaMask || injected?.providers?.find(p => p.isMetaMask) || (injected?.isMetaMask ? injected : null);
+    if (!walletProvider) throw new Error("ไม่พบ MetaMask กรุณาติดตั้งส่วนขยายหรือเปิดผ่านเบราว์เซอร์ใน MetaMask");
+    const accounts = await walletProvider.request({ method: "eth_requestAccounts" });
+    if (BigInt(await walletProvider.request({ method: "eth_chainId" })) !== 11155111n) {
+      await walletProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0xaa36a7" }] });
+    }
+    account = Web3.utils.toChecksumAddress(accounts[0]);
     web3 = new Web3(new Web3.providers.HttpProvider(INFURA_URL));
-    const signer = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY.startsWith("0x") ? PRIVATE_KEY : "0x" + PRIVATE_KEY);
-    PRIVATE_KEY = "";
-    web3.eth.accounts.wallet.add(signer);
-    account = signer.address;
-    if (await web3.eth.getChainId() !== 11155111n) throw new Error("เครือข่ายต้องเป็น Sepolia");
+    if (await web3.eth.getChainId() !== 11155111n) throw new Error("เครือข่าย Infura ต้องเป็น Sepolia");
     if (await web3.eth.getCode(CONTRACT_ADDRESS) === "0x") throw new Error("ไม่พบ Contract บน Sepolia");
-    const instance = new web3.eth.Contract(ABI, CONTRACT_ADDRESS);
+    const reader = new web3.eth.Contract(ABI, CONTRACT_ADDRESS);
+    const writer = new (new Web3(walletProvider)).eth.Contract(ABI, CONTRACT_ADDRESS);
     contract = {
-      checkBlance: () => instance.methods.checkBlance().call({ from: account }),
-      deposit: ({ value }) => sendTransaction(instance.methods.deposit(), { from: account, value }),
-      withdraw: value => sendTransaction(instance.methods.withdraw(value), { from: account })
+      checkBlance: () => reader.methods.checkBlance().call({ from: account }),
+      deposit: ({ value }) => sendTransaction(writer.methods.deposit(), { from: account, value }),
+      withdraw: value => sendTransaction(writer.methods.withdraw(value), { from: account })
     };
+    walletProvider.on("accountsChanged", handleWalletChange);
+    walletProvider.on("chainChanged", handleWalletChange);
+    walletProvider.on("disconnect", handleWalletChange);
     await refreshBalance();
     ui.walletAddress.textContent = account;
-    ui.walletLabel.textContent = "เชื่อมต่อผ่าน Infura · ลงนามในเบราว์เซอร์";
-    setStatus("เชื่อมต่อ Infura สำเร็จ · พร้อมใช้งานบน Sepolia", "success");
-  } catch {
+    ui.walletLabel.textContent = "MetaMask · อ่านข้อมูลผ่าน Infura";
+    setStatus("เชื่อมต่อสำเร็จ · ยืนยันฝาก–ถอนผ่าน MetaMask", "success");
+  } catch (error) {
     clearSession();
-    throw new Error("เชื่อมต่อไม่สำเร็จ ตรวจ Infura API Key หรือ Sepolia URL, Private Key และสิทธิ์ใช้งาน Sepolia");
-  } finally { PRIVATE_KEY = ""; }
+    if (error.code === 4001) throw new Error("คุณยกเลิกคำขอใน MetaMask");
+    throw new Error("เชื่อมต่อไม่สำเร็จ ตรวจ MetaMask บน Sepolia และ Infura API Key");
+  }
 }
 
 async function sendTransaction(method, options) {
@@ -162,7 +179,7 @@ disconnect.addEventListener("click", () => {
   ui.transactionResult.hidden = true;
   setStatus("ตัดการเชื่อมต่อแล้ว · ล้างบัญชีออกจากหน่วยความจำของแอป");
 });
-window.addEventListener("pagehide", () => { web3?.eth.accounts.wallet.clear(); credentialsInput.value = ""; });
+window.addEventListener("pagehide", () => { clearSession(); credentialsInput.value = ""; });
 
 function parseAmount(input) {
   const value = input.value.trim();
@@ -188,7 +205,7 @@ async function submitTransaction(operation) {
   }
   const label = operation === "deposit" ? "ฝากเงิน" : "ถอนเงิน";
   if (!window.confirm(`ยืนยัน${label} ${Web3.utils.fromWei(amount.toString(), "ether")} Sepolia ETH จากบัญชี ${activeAccount}?`)) return;
-  setStatus(`กำลังลงนามและส่งรายการ${label}ผ่าน Infura…`);
+  setStatus(`กรุณายืนยันรายการ${label}ใน MetaMask…`);
   const transaction = operation === "deposit"
     ? await activeContract.deposit({ value: amount })
     : await activeContract.withdraw(amount);
