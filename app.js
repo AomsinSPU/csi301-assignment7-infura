@@ -33,8 +33,7 @@ const ABI = [
  { type: "function", name: "withdraw", inputs: [{ name: "amount", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
  { type: "function", name: "checkBlance", inputs: [], outputs: [{ name: "balance", type: "uint256" }], stateMutability: "view" }
 ];
-const rpcInput = document.getElementById("infura-url");
-const keyInput = document.getElementById("private-key");
+const credentialsInput = document.getElementById("connection-credentials");
 const disconnect = document.getElementById("disconnect-wallet");
 const contractLink = document.getElementById("contract-link");
 contractLink.href = `${EXPLORER_URL}/address/${CONTRACT_ADDRESS}#code`;
@@ -56,8 +55,7 @@ function updateControls() {
   ui.withdrawAmount.disabled = unavailable;
   ui.depositButton.disabled = unavailable;
   ui.withdrawButton.disabled = unavailable;
-  rpcInput.disabled = busy || Boolean(contract);
-  keyInput.disabled = busy || Boolean(contract);
+  credentialsInput.disabled = busy || Boolean(contract);
   disconnect.disabled = busy || !contract;
   ui.feedback.setAttribute("aria-busy", String(busy));
 }
@@ -66,7 +64,7 @@ function clearSession() {
   revision += 1;
   web3?.eth.accounts.wallet.clear();
   web3 = null;
-  keyInput.value = "";
+  credentialsInput.value = "";
   account = null;
   contract = null;
   wrongNetwork = false;
@@ -111,12 +109,14 @@ async function refreshBalance() {
 }
 
 async function synchronizeWallet() {
-  const infuraValue = rpcInput.value.trim();
+  const entries = credentialsInput.value.trim().split(/\s+/);
+  if (entries.length !== 2) throw new Error("ใส่ Infura API Key หรือ URL ในบรรทัดแรก และ Private Key ในบรรทัดที่สอง");
+  const infuraValue = entries[0];
   const INFURA_URL = /^[a-zA-Z0-9_-]+$/.test(infuraValue)
     ? `https://sepolia.infura.io/v3/${infuraValue}`
     : infuraValue;
-  let PRIVATE_KEY = keyInput.value.trim();
-  keyInput.value = "";
+  let PRIVATE_KEY = entries[1];
+  credentialsInput.value = "";
   clearSession();
   try {
     if (!/^https:\/\/sepolia\.infura\.io\/v3\/[a-zA-Z0-9_-]+$/.test(INFURA_URL)) throw new Error("ใช้ Infura HTTPS URL ของ Sepolia เท่านั้น");
@@ -162,7 +162,7 @@ disconnect.addEventListener("click", () => {
   ui.transactionResult.hidden = true;
   setStatus("ตัดการเชื่อมต่อแล้ว · ล้างบัญชีออกจากหน่วยความจำของแอป");
 });
-window.addEventListener("pagehide", () => { web3?.eth.accounts.wallet.clear(); keyInput.value = ""; });
+window.addEventListener("pagehide", () => { web3?.eth.accounts.wallet.clear(); credentialsInput.value = ""; });
 
 function parseAmount(input) {
   const value = input.value.trim();
