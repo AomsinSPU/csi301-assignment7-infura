@@ -111,7 +111,10 @@ async function refreshBalance() {
 }
 
 async function synchronizeWallet() {
-  const INFURA_URL = rpcInput.value.trim();
+  const infuraValue = rpcInput.value.trim();
+  const INFURA_URL = /^[a-zA-Z0-9_-]+$/.test(infuraValue)
+    ? `https://sepolia.infura.io/v3/${infuraValue}`
+    : infuraValue;
   let PRIVATE_KEY = keyInput.value.trim();
   keyInput.value = "";
   clearSession();
@@ -136,7 +139,7 @@ async function synchronizeWallet() {
     setStatus("เชื่อมต่อ Infura สำเร็จ · พร้อมใช้งานบน Sepolia", "success");
   } catch {
     clearSession();
-    throw new Error("เชื่อมต่อไม่สำเร็จ ตรวจ Infura URL, Private Key และสิทธิ์ใช้งาน Sepolia");
+    throw new Error("เชื่อมต่อไม่สำเร็จ ตรวจ Infura API Key หรือ Sepolia URL, Private Key และสิทธิ์ใช้งาน Sepolia");
   } finally { PRIVATE_KEY = ""; }
 }
 
